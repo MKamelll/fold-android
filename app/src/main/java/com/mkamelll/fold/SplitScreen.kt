@@ -14,19 +14,22 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FabPosition
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -101,7 +104,7 @@ fun SplitScreen(modifier: Modifier = Modifier) {
                                     ) -> {
                                         if (pages[index] == null) {
                                             val page = renderer.openPage(index)
-                                            val scale = 0.5f
+                                            val scale = 0.7f
                                             val bitmap = createBitmap(
                                                 (page.width * scale).toInt(),
                                                 (page.height * scale).toInt()
@@ -171,27 +174,47 @@ fun SplitScreen(modifier: Modifier = Modifier) {
                     placeholder = { Text("pages(i.e 1,1-5,4)") }
                 )
                 Spacer(Modifier.height(12.dp))
-                LazyColumn(
+                LazyRow(
                     state = listState
                 ) {
                     itemsIndexed(pages) { index, bitmap ->
-                        if (bitmap != null) {
-                            Image(
-                                modifier = Modifier
-                                    .padding(8.dp)
-                                    .clickable {
-                                        fullScreenPage = Pair(bitmap, index)
-                                    },
-                                bitmap = bitmap.asImageBitmap(),
-                                contentDescription = "thumbnail for page $index"
-                            )
-                        } else {
-                            Box(
-                                modifier = Modifier.fillMaxWidth(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CircularProgressIndicator()
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .width(300.dp)
+                                .padding(8.dp)
+                        ) {
+                            if (bitmap != null) {
+                                Image(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clickable {
+                                            fullScreenPage = Pair(bitmap, index)
+                                        },
+                                    contentScale = ContentScale.Fit,
+                                    bitmap = bitmap.asImageBitmap(),
+                                    contentDescription = "thumbnail for page $index"
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator()
+                                }
                             }
+                            Text(
+                                text = "${index + 1}",
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .padding(8.dp)
+                                    .background(
+                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                                        RoundedCornerShape(4.dp)
+                                    )
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                                color = Color.White
+                            )
                         }
                     }
                 }
