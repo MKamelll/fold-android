@@ -11,3 +11,21 @@ fun Uri.fileName(context: Context): String? {
         cursor.getString(nameIndex)
     }
 }
+
+fun String.toPageIndices(): Set<Int> {
+    if (this.isEmpty()) return emptySet()
+    val result = mutableSetOf<Int>()
+    val parts = this.split(",")
+    for (part in parts) {
+        val trimmed = part.trim()
+        if (trimmed.contains("-")) {
+            val (start, end) = trimmed.split("-").map { it.trim().toIntOrNull() }
+            if (start != null && end != null) {
+                result.addAll(start..end)
+            }
+        } else {
+            trimmed.toIntOrNull()?.let { result.add(it) }
+        }
+    }
+    return result.map { it - 1 }.toSet()
+}

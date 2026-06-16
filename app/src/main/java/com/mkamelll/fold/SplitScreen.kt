@@ -24,7 +24,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -82,7 +82,30 @@ fun SplitScreen(modifier: Modifier = Modifier) {
     }
     var expanded by remember { mutableStateOf(false) }
     val options = listOf("even", "odd", "range")
-    var selected by remember { mutableStateOf("range") }
+    var selectedOption by remember { mutableStateOf("range") }
+
+    val pagesToSplit = remember(file, selectedOption, input, pages.size) {
+        when (selectedOption) {
+            "even" -> {
+                pages.indices.filter { (it + 1) % 2 == 0 }.toList()
+            }
+
+            "odd" -> {
+                pages.indices.filter { (it + 1) % 2 != 0 }.toList()
+            }
+
+            "range" -> {
+                if (input.isNotEmpty()) {
+                    input.toPageIndices().map { it.coerceAtLeast(0).coerceAtMost(pages.size - 1) }
+                        .toList()
+                } else {
+                    pages.indices.toList()
+                }
+            }
+
+            else -> pages.indices.toList()
+        }
+    }
 
     LaunchedEffect(file) {
         file?.let {
@@ -207,7 +230,7 @@ fun SplitScreen(modifier: Modifier = Modifier) {
                     },
                 ) {
                     OutlinedTextField(
-                        value = selected,
+                        value = selectedOption,
                         onValueChange = {},
                         readOnly = true,
                         trailingIcon = {
@@ -225,7 +248,7 @@ fun SplitScreen(modifier: Modifier = Modifier) {
                             DropdownMenuItem(
                                 text = { Text(it) },
                                 onClick = {
-                                    selected = it
+                                    selectedOption = it
                                     expanded = false
                                 }
                             )
@@ -234,7 +257,7 @@ fun SplitScreen(modifier: Modifier = Modifier) {
                 }
 
                 AnimatedVisibility(
-                    visible = selected == "range",
+                    visible = selectedOption == "range",
                     enter = fadeIn() + expandVertically(),
                     exit = fadeOut() + shrinkVertically(),
                     modifier = Modifier.padding(4.dp)
@@ -250,7 +273,8 @@ fun SplitScreen(modifier: Modifier = Modifier) {
                 LazyRow(
                     state = listState
                 ) {
-                    itemsIndexed(pages) { index, bitmap ->
+                    items(pagesToSplit) {
+                        val bitmap = pages[it]
                         Box(
                             modifier = Modifier
                                 .fillMaxHeight()
@@ -262,11 +286,11 @@ fun SplitScreen(modifier: Modifier = Modifier) {
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .clickable {
-                                            fullScreenPageIndex = index
+                                            fullScreenPageIndex = it
                                         },
                                     contentScale = ContentScale.Fit,
                                     bitmap = bitmap.asImageBitmap(),
-                                    contentDescription = "thumbnail for page $index"
+                                    contentDescription = "thumbnail for page $it"
                                 )
                             } else {
                                 Box(
@@ -277,7 +301,7 @@ fun SplitScreen(modifier: Modifier = Modifier) {
                                 }
                             }
                             Text(
-                                text = "${index + 1}",
+                                text = "${it + 1}",
                                 modifier = Modifier
                                     .align(Alignment.BottomCenter)
                                     .padding(8.dp)
@@ -293,21 +317,23 @@ fun SplitScreen(modifier: Modifier = Modifier) {
                 }
             }
         }
-        fullScreenPageIndex?.let { index ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black),
-                contentAlignment = Alignment.Center
-            ) {
-                fullScreenPageBitmap?.let {
-                    Image(
-                        bitmap = it.asImageBitmap(),
-                        contentDescription = "fullscreen of page $index",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Fit
-                    )
-                }
+    }
+
+
+    fullScreenPageIndex?.let { index ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black),
+            contentAlignment = Alignment.Center
+        ) {
+            fullScreenPageBitmap?.let {
+                Image(
+                    bitmap = it.asImageBitmap(),
+                    contentDescription = "fullscreen of page $index",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit
+                )
             }
         }
     }
