@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -57,50 +58,47 @@ fun Drawer() {
             ModalDrawerSheet {
                 Column(
                     modifier = Modifier
-                        .padding(horizontal = 16.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
+                        .padding(16.dp)
+                        .verticalScroll(rememberScrollState()),
 
+                    ) {
+                    Text(
+                        "PDF Tools",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(16.dp)
+                    )
                     NavigationDrawerItem(
                         label = { Text("Merge") },
                         selected = route == "merge",
                         onClick = {
-                            navController.navigate("merge")
+                            navController.navigate("merge") {
+                                popUpTo(navController.graph.startDestinationId) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
                             scope.launch { drawerState.close() }
                         }
                     )
                     NavigationDrawerItem(
-                        label = { Text("Delete") },
-                        selected = route == "delete",
-                        onClick = {
-                            navController.navigate("delete")
-                            scope.launch { drawerState.close() }
-                        }
-                    )
-                    NavigationDrawerItem(
-                        label = { Text("Split") },
+                        label = {
+                            Text("Split")
+                        },
                         selected = route == "split",
                         onClick = {
-                            navController.navigate("split")
+                            navController.navigate("split") {
+                                popUpTo(navController.graph.startDestinationId) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
                             scope.launch { drawerState.close() }
                         }
                     )
-                    NavigationDrawerItem(
-                        label = { Text("Reorder") },
-                        selected = route == "reorder",
-                        onClick = {
-                            navController.navigate("reorder")
-                            scope.launch { drawerState.close() }
-                        }
-                    )
-                    NavigationDrawerItem(
-                        label = { Text("Pick") },
-                        selected = route == "pick",
-                        onClick = {
-                            navController.navigate("pick")
-                            scope.launch { drawerState.close() }
-                        }
-                    )
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 }
             }
         },
@@ -133,21 +131,12 @@ fun Drawer() {
                 )
             }
         ) { innerPadding ->
-            NavHost(navController, startDestination = "split") {
+            NavHost(navController, startDestination = "merge") {
                 composable("merge") {
                     MergeScreen(Modifier.padding(innerPadding))
                 }
                 composable("split") {
                     SplitScreen(Modifier.padding(innerPadding))
-                }
-                composable("delete") {
-                    DeleteScreen(Modifier.padding(innerPadding))
-                }
-                composable("reorder") {
-                    ReorderScreen(Modifier.padding(innerPadding))
-                }
-                composable("pick") {
-                    PickScreen(Modifier.padding(innerPadding))
                 }
             }
         }
