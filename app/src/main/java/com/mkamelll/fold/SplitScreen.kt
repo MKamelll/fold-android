@@ -1,9 +1,5 @@
 package com.mkamelll.fold
 
-import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.pdf.PdfRenderer
-import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -47,7 +43,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -60,8 +55,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.createBitmap
-import com.tom_roush.pdfbox.pdmodel.PDDocument
+import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
@@ -70,69 +64,25 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.milliseconds
 
-fun extractPages(context: Context, uri: Uri, pageIndices: List<Int>, outputUri: Uri) {
-    val input = context.contentResolver.openInputStream(uri) ?: return
-    val output = context.contentResolver.openOutputStream(outputUri) ?: return
-
-    val original = PDDocument.load(input)
-    val newDoc = PDDocument()
-
-    pageIndices.forEach {
-        val page = original.getPage(it)
-        newDoc.addPage(page)
-    }
-
-    newDoc.save(output)
-    newDoc.close()
-    original.close()
-    output.close()
-    input.close()
-}
 
 @OptIn(FlowPreview::class, ExperimentalMaterial3Api::class)
 @Composable
-fun SplitScreen(modifier: Modifier = Modifier) {
-    var file by remember { mutableStateOf<Uri?>(null) }
-    var isSplitting by remember { mutableStateOf(false) }
-    var input by remember { mutableStateOf("") }
+fun SplitScreen(modifier: Modifier = Modifier, vm: SplitViewModel = viewModel()) {
+
     val context = LocalContext.current
-    var fullScreenPageIndex by remember { mutableStateOf<Int?>(null) }
-    var fullScreenPageBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    val pages = remember { mutableStateListOf<Bitmap?>() }
     val listState = rememberLazyListState()
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let {
-            file = uri
-            pages.clear()
+            vm.file = uri
         }
     }
     var expanded by remember { mutableStateOf(false) }
     val options = listOf("even", "odd", "range")
-    var selectedOption by remember { mutableStateOf("range") }
 
-    val pagesToSplit = remember(file, selectedOption, input, pages.size) {
-        when (selectedOption) {
-            "even" -> {
-                pages.indices.filter { (it + 1) % 2 == 0 }.toList()
-            }
-
-            "odd" -> {
-                pages.indices.filter { (it + 1) % 2 != 0 }.toList()
-            }
-
-            "range" -> {
-                if (input.isNotEmpty()) {
-                    input.toPageIndices().map { it.coerceAtLeast(0).coerceAtMost(pages.size - 1) }
-                        .toList()
-                } else {
-                    pages.indices.toList()
-                }
-            }
-
-            else -> pages.indices.toList()
-        }
+    LaunchedEffect(vm.file, vm.selectedOption, vm.input, vm.pages.size) {
+        vm.setPagesToSplit()
     }
 
     val scope = rememberCoroutineScope()
@@ -140,109 +90,41 @@ fun SplitScreen(modifier: Modifier = Modifier) {
         ActivityResultContracts.CreateDocument("application/pdf")
     ) { uri ->
         uri?.let { outputUri ->
-            file?.let { file ->
-                scope.launch(Dispatchers.IO) {
-                    isSplitting = true
-                    extractPages(context, file, pagesToSplit, outputUri)
-                    withContext(Dispatchers.Main) {
-                        isSplitting = false
-                        showCompletedNotification(context, outputUri, "Splitted file is ready!")
-                    }
+            vm.outputUri = outputUri
+            vm.split(context.contentResolver)
+            scope.launch {
+                withContext(Dispatchers.Main) {
+                    showCompletedNotification(context, outputUri, "Splitted file is ready!")
                 }
             }
         }
     }
 
-    LaunchedEffect(file) {
-        file?.let {
-            withContext(Dispatchers.IO) {
-                val fd = context.contentResolver.openFileDescriptor(it, "r") ?: return@withContext
-                val renderer = PdfRenderer(fd)
-                repeat(renderer.pageCount) { pages.add(null) }
-                renderer.close()
-            }
-        }
+    LaunchedEffect(vm.file) {
+        vm.initPages(context.contentResolver)
     }
 
-    LaunchedEffect(file) {
-        file?.let {
-            val fd = context.contentResolver.openFileDescriptor(it, "r") ?: return@LaunchedEffect
-            val renderer = PdfRenderer(fd)
-            try {
-                snapshotFlow { listState.firstVisibleItemIndex }
-                    .debounce(150.milliseconds)
-                    .collectLatest { first ->
-                        val last =
-                            (first + listState.layoutInfo.visibleItemsInfo.size + 1).coerceAtMost(
-                                pages.size - 1
-                            )
-                        val buffer = 10
-                        withContext(Dispatchers.IO) {
-                            pages.indices.forEach { index ->
-                                when {
-                                    index in (first - buffer).coerceAtLeast(0)..(last + buffer).coerceAtMost(
-                                        pages.size - 1
-                                    ) -> {
-                                        if (pages[index] == null) {
-                                            val page = renderer.openPage(index)
-                                            val scale = 0.5f
-                                            val bitmap = createBitmap(
-                                                (page.width * scale).toInt(),
-                                                (page.height * scale).toInt()
-                                            )
-                                            bitmap.eraseColor(android.graphics.Color.WHITE)
-                                            page.render(
-                                                bitmap,
-                                                null,
-                                                null,
-                                                PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY
-                                            )
-                                            page.close()
-                                            pages[index] = bitmap
-                                        }
-                                    }
-
-                                    else -> {
-                                        pages[index]?.recycle()
-                                        pages[index] = null
-                                    }
-                                }
-                            }
-                        }
-                    }
-            } finally {
-                renderer.close()
-                fd.close()
+    LaunchedEffect(vm.file) {
+        snapshotFlow { listState.firstVisibleItemIndex }
+            .debounce(150.milliseconds)
+            .collectLatest { first ->
+                val last =
+                    (first + listState.layoutInfo.visibleItemsInfo.size + 1).coerceAtMost(
+                        vm.pages.size - 1
+                    )
+                vm.renderPages(context.contentResolver, first, last)
             }
-        }
-
     }
 
-    LaunchedEffect(fullScreenPageIndex) {
-        fullScreenPageIndex?.let { i ->
-            file?.let {
-                withContext(Dispatchers.IO) {
-                    val fd =
-                        context.contentResolver.openFileDescriptor(it, "r") ?: return@withContext
-                    val renderer = PdfRenderer(fd)
-                    val page = renderer.openPage(i)
-                    val bitmap = createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888)
-                    bitmap.eraseColor(android.graphics.Color.WHITE)
-                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                    page.close()
-                    renderer.close()
-                    fd.close()
-                    fullScreenPageBitmap = bitmap
-                }
-            }
-        }
+    LaunchedEffect(vm.fullScreenPageIndex) {
+        vm.renderFullScreenPage(context.contentResolver)
     }
 
     BackHandler(
-        enabled = fullScreenPageIndex != null
+        enabled = vm.fullScreenPageIndex != null
     ) {
-        fullScreenPageIndex = null
-        fullScreenPageBitmap = null
+        vm.fullScreenPageIndex = null
+        vm.fullScreenPageBitmap = null
     }
 
     Box(
@@ -250,7 +132,7 @@ fun SplitScreen(modifier: Modifier = Modifier) {
     ) {
         Scaffold(
             floatingActionButton = {
-                AnimatedVisibility(visible = !isSplitting) {
+                AnimatedVisibility(visible = !vm.isSplitting) {
                     FloatingActionButton(
                         onClick = {
                             launcher.launch(arrayOf("application/pdf"))
@@ -276,7 +158,7 @@ fun SplitScreen(modifier: Modifier = Modifier) {
                     },
                 ) {
                     OutlinedTextField(
-                        value = selectedOption,
+                        value = vm.selectedOption,
                         onValueChange = {},
                         readOnly = true,
                         trailingIcon = {
@@ -294,7 +176,7 @@ fun SplitScreen(modifier: Modifier = Modifier) {
                             DropdownMenuItem(
                                 text = { Text(it) },
                                 onClick = {
-                                    selectedOption = it
+                                    vm.selectedOption = it
                                     expanded = false
                                 }
                             )
@@ -303,26 +185,26 @@ fun SplitScreen(modifier: Modifier = Modifier) {
                 }
 
                 AnimatedVisibility(
-                    visible = selectedOption == "range",
+                    visible = vm.selectedOption == "range",
                     enter = fadeIn() + expandVertically(),
                     exit = fadeOut() + shrinkVertically(),
                     modifier = Modifier.padding(4.dp)
                 ) {
                     OutlinedTextField(
-                        value = input,
-                        onValueChange = { input = it },
+                        value = vm.input,
+                        onValueChange = { vm.input = it },
                         placeholder = { Text("pages(i.e 1,1-5,4)") }
                     )
                 }
 
-                file?.let {
+                vm.file?.let {
                     Button(
-                        enabled = !isSplitting,
+                        enabled = !vm.isSplitting,
                         onClick = {
                             saveLauncher.launch("splitted.pdf")
                         }
                     ) {
-                        if (isSplitting) {
+                        if (vm.isSplitting) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(20.dp),
                                 strokeWidth = 2.dp
@@ -337,8 +219,8 @@ fun SplitScreen(modifier: Modifier = Modifier) {
                 LazyRow(
                     state = listState
                 ) {
-                    items(pagesToSplit) {
-                        val bitmap = pages[it]
+                    items(vm.pagesToSplit) {
+                        val bitmap = vm.pages.getOrNull(it)
                         Box(
                             modifier = Modifier
                                 .fillMaxHeight()
@@ -350,7 +232,7 @@ fun SplitScreen(modifier: Modifier = Modifier) {
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .clickable {
-                                            fullScreenPageIndex = it
+                                            vm.fullScreenPageIndex = it
                                         },
                                     contentScale = ContentScale.Fit,
                                     bitmap = bitmap.asImageBitmap(),
@@ -383,15 +265,14 @@ fun SplitScreen(modifier: Modifier = Modifier) {
         }
     }
 
-
-    fullScreenPageIndex?.let { index ->
+    vm.fullScreenPageIndex?.let { index ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black),
             contentAlignment = Alignment.Center
         ) {
-            fullScreenPageBitmap?.let {
+            vm.fullScreenPageBitmap?.let {
                 Image(
                     bitmap = it.asImageBitmap(),
                     contentDescription = "fullscreen of page $index",
