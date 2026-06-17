@@ -1,5 +1,6 @@
 package com.mkamelll.fold
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -29,6 +31,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -47,6 +50,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -57,12 +61,33 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.createBitmap
+import com.tom_roush.pdfbox.pdmodel.PDDocument
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.milliseconds
+
+fun extractPages(context: Context, uri: Uri, pageIndices: List<Int>, outputUri: Uri) {
+    val input = context.contentResolver.openInputStream(uri) ?: return
+    val output = context.contentResolver.openOutputStream(outputUri) ?: return
+
+    val original = PDDocument.load(input)
+    val newDoc = PDDocument()
+
+    pageIndices.forEach {
+        val page = original.getPage(it)
+        newDoc.addPage(page)
+    }
+
+    newDoc.save(output)
+    newDoc.close()
+    original.close()
+    output.close()
+    input.close()
+}
 
 @OptIn(FlowPreview::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -78,7 +103,10 @@ fun SplitScreen(modifier: Modifier = Modifier) {
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
-        uri?.let { file = uri }
+        uri?.let {
+            file = uri
+            pages.clear()
+        }
     }
     var expanded by remember { mutableStateOf(false) }
     val options = listOf("even", "odd", "range")
@@ -104,6 +132,24 @@ fun SplitScreen(modifier: Modifier = Modifier) {
             }
 
             else -> pages.indices.toList()
+        }
+    }
+
+    val scope = rememberCoroutineScope()
+    val saveLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri ->
+        uri?.let { outputUri ->
+            file?.let { file ->
+                scope.launch(Dispatchers.IO) {
+                    isSplitting = true
+                    extractPages(context, file, pagesToSplit, outputUri)
+                    withContext(Dispatchers.Main) {
+                        isSplitting = false
+                        showCompletedNotification(context, outputUri, "Splitted file is ready!")
+                    }
+                }
+            }
         }
     }
 
@@ -204,7 +250,7 @@ fun SplitScreen(modifier: Modifier = Modifier) {
     ) {
         Scaffold(
             floatingActionButton = {
-                AnimatedVisibility(visible = (file == null && !isSplitting)) {
+                AnimatedVisibility(visible = !isSplitting) {
                     FloatingActionButton(
                         onClick = {
                             launcher.launch(arrayOf("application/pdf"))
@@ -267,6 +313,24 @@ fun SplitScreen(modifier: Modifier = Modifier) {
                         onValueChange = { input = it },
                         placeholder = { Text("pages(i.e 1,1-5,4)") }
                     )
+                }
+
+                file?.let {
+                    Button(
+                        enabled = !isSplitting,
+                        onClick = {
+                            saveLauncher.launch("splitted.pdf")
+                        }
+                    ) {
+                        if (isSplitting) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Text("Split")
+                        }
+                    }
                 }
 
                 Spacer(Modifier.height(12.dp))
